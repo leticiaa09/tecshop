@@ -1,11 +1,16 @@
-import 'dotenv/config';
 import express from 'express';
 import { MongoClient } from 'mongodb';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+// Carrega o dotenv apenas se não estiver em produção (evita erro na Vercel onde o .env não existe fisicamente)
+if (process.env.NODE_ENV !== 'production') {
+  const dotenv = await import('dotenv');
+  dotenv.config();
+}
+
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Configuração para servir o Frontend
 const __filename = fileURLToPath(import.meta.url);
@@ -15,27 +20,46 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 // ===============================
-// CONEXÃO COM MONGODB
+// CONEXÃO COM MONGODB (Serverless Ready)
 // ===============================
 
-const client = new MongoClient(process.env.MONGODB_URI, {
+const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
+
+if (!uri) {
+  console.error('ERRO: A variável de ambiente MONGODB_URI ou MONGO_URI não está definida!');
+}
+
+const client = new MongoClient(uri, {
   family: 4
 });
 
 let db;
 
 async function conectarBanco() {
+  if (db) return db; // Reutiliza a conexão se já estiver aberta (otimização serverless)
+  
   try {
     await client.connect();
-
     db = client.db('techshop');
-
     console.log('MongoDB conectado com sucesso!');
+    return db;
   } catch (error) {
     console.error('Erro ao conectar ao MongoDB:', error);
-    process.exit(1);
+    throw error;
   }
 }
+
+// Middleware global para garantir que o banco está conectado em cada requisição na Vercel
+app.use(async (req, res, next) => {
+  try {
+    if (!db) {
+      await conectarBanco();
+    }
+    next();
+  } catch (error) {
+    res.status(500).json({ erro: 'Falha na conexão com o banco de dados.' });
+  }
+});
 
 // ===============================
 // CONTROLE DE ACESSO
@@ -79,11 +103,9 @@ app.get('/api/relatorio-vendas', async (req, res) => {
           as: 'cliente'
         }
       },
-
       {
         $unwind: '$cliente'
       },
-
       {
         $lookup: {
           from: 'itens_pedido',
@@ -92,50 +114,32 @@ app.get('/api/relatorio-vendas', async (req, res) => {
           as: 'itens'
         }
       },
-
       {
         $unwind: '$itens'
       },
-
       {
         $group: {
           _id: '$id_pedido',
-
           id_pedido: {
             $first: '$id_pedido'
           },
-
           nome_cliente: {
             $first: '$cliente.nome'
           },
-
           total_pedido: {
-            $sum: {
-              $multiply: [
+            $sum: {$multiply: [
                 { $toDouble: '$itens.quantidade' },
                 { $toDouble: '$itens.preco_unitario' }
               ]
             }
           },
-
           status_pedido: {
             $first: '$status_pedido'
           }
         }
       },
-
       {
-        $project: {
-          _id: 0,
-          id_pedido: 1,
-          nome_cliente: 1,
-          total_pedido: 1,
-          status_pedido: 1
-        }
-      },
-
-      {
-        $sort: {
+        $project: {           _id: 0,           id_pedido: 1,           nome_cliente: 1,           total_pedido: 1,           status_pedido: 1         }       },       {$sort: {
           id_pedido: 1
         }
       }
@@ -145,7 +149,6 @@ app.get('/api/relatorio-vendas', async (req, res) => {
 
   } catch (error) {
     console.error(error);
-
     res.status(500).json({
       erro: error.message
     });
@@ -167,7 +170,6 @@ app.get('/api/estoque', async (req, res) => {
           as: 'itens'
         }
       },
-
       {
         $addFields: {
           total_unidades_vendidas: {
@@ -175,7 +177,6 @@ app.get('/api/estoque', async (req, res) => {
           }
         }
       },
-
       {
         $project: {
           _id: 0,
@@ -185,7 +186,6 @@ app.get('/api/estoque', async (req, res) => {
           total_unidades_vendidas: 1
         }
       },
-
       {
         $sort: {
           id_produto: 1
@@ -197,7 +197,6 @@ app.get('/api/estoque', async (req, res) => {
 
   } catch (error) {
     console.error(error);
-
     res.status(500).json({
       erro: error.message
     });
@@ -213,7 +212,6 @@ app.put(
   '/api/produtos/:id',
   verificarAcesso('Admin'),
   async (req, res) => {
-
     try {
       const idProduto = parseInt(req.params.id);
       const novoEstoque = parseInt(req.body.novoEstoque);
@@ -255,7 +253,6 @@ app.put(
 
     } catch (error) {
       console.error(error);
-
       res.status(500).json({
         erro: error.message
       });
@@ -264,17 +261,17 @@ app.put(
 );
 
 // ===============================
-// INICIAR SERVIDOR
+// EXPORTAÇÃO / INICIALIZAÇÃO
 // ===============================
 
-async function iniciarServidor() {
-  await conectarBanco();
-
-  app.listen(PORT, () => {
-    console.log(
-      `Servidor TechShop rodando em http://localhost:${PORT}`
-    );
+// Se estiver rodando localmente, inicia o listen na porta 3000
+if (process.env.NODE_ENV !== 'production') {
+  conectarBanco().then(() => {
+    app.listen(PORT, () => {
+      console.log(`Servidor TechShop rodando em http://localhost:${PORT}`);
+    });
   });
 }
 
-iniciarServidor();
+// Exporta o app para a Vercel gerenciar as rotas serverless corretamente
+export default app;
