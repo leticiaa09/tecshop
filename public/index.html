@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Painel TechShop - Full Stack</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 30px;
+background-color: #f4f6f9; }
+
+.card { background: white; padding: 20px; border-radius:
+8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+table { width: 100%; border-collapse: collapse; margin-top:
+10px; }
+th, td { border: 1px solid #ddd; padding: 10px; text-align:
+left; }
+th { background-color: #007bff; color: white; }
+.btn { padding: 6px 12px; cursor: pointer; border: none;
+border-radius: 4px; }
+.btn-update { background-color: #28a745; color: white; }
+.seletor-acesso { padding: 10px; font-weight: bold;
+background-color: #e2e3e5; border-radius: 5px; }
+</style>
+</head>
+<body>
+<h1>Gerenciamento de Dados TechShop</h1>
+<!-- Simulador de Login / Nível de Acesso -->
+<div class="card seletor-acesso">
+<label for="nivelAcesso">Simular Nível de Acesso Atual:
+</label>
+<select id="nivelAcesso" onchange="atualizarInterface()">
+<option value="Client">Cliente (Apenas
+Visualização)</option>
+<option value="Admin">Administrador (Acesso
+Total)</option>
+</select>
+</div>
+<!-- Tabela 1: Relatório de Vendas (DQL) -->
+<div class="card">
+<h2>Relatório de Vendas (Consultas Integradas)</h2>
+<button class="btn btn-update" 
+onclick="alert('O botão está funcionando!'); carregarVendas()">Atualizar Relatório</button>
+<table id="tabelaVendas">
+<thead>
+<tr>
+<th>ID Pedido</th>
+<th>Cliente</th>
+<th>Total Pedido</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><!-- Inserido dinamicamente via JS --></tbody>
+</table>
+</div>
+<!-- Tabela 2: Gestão de Estoque (DQL + DML) -->
+<div class="card">
+<h2>Controle de Estoque Técnico</h2>
+<table id="tabelaEstoque">
+<thead>
+<tr>
+<th>Produto</th>
+<th>Estoque Atual</th>
+<th>Total Vendido</th>
+<th>Ação (Restrito Admin)</th>
+</tr>
+</thead>
+
+<tbody><!-- Inserido dinamicamente via JS --></tbody>
+</table>
+</div>
+<script>
+// Função utilitária para pegar o nível de acesso selecionado no HTML
+function obterNivelAcesso() {
+return document.getElementById('nivelAcesso').value;
+}
+// 1. Buscar dados de Vendas (GET)
+async function carregarVendas() {
+    try {
+        alert('1 - Entrou na função');
+
+        const resposta = await fetch('/api/relatorio-vendas');
+
+        alert('2 - API respondeu: ' + resposta.status);
+
+        if (!resposta.ok) {
+            throw new Error('Erro HTTP: ' + resposta.status);
+        }
+
+        const dados = await resposta.json();
+
+        alert('3 - Dados recebidos: ' + dados.length);
+
+        const tbody = document.querySelector('#tabelaVendas tbody');
+        tbody.innerHTML = '';
+
+        dados.forEach(venda => {
+            tbody.innerHTML += `
+                <tr>
+                    <td>${venda.id_pedido}</td>
+                    <td>${venda.nome_cliente}</td>
+                    <td>R$ ${parseFloat(venda.total_pedido).toFixed(2)}</td>
+                    <td>${venda.status_pedido}</td>
+                </tr>
+            `;
+        });
+
+        alert('4 - Relatório atualizado!');
+        
+    } catch (erro) {
+        alert('ERRO: ' + erro.message);
+        console.error(erro);
+    }
+}
+// 2. Buscar dados de Estoque (GET)
+async function carregarEstoque() {
+const resposta = await fetch('/api/estoque');
+const dados = await resposta.json();
+const tbody = document.querySelector('#tabelaEstoque tbody');
+tbody.innerHTML = '';
+dados.forEach(item => {
+tbody.innerHTML += `
+<tr>
+<td>${item.nome_produto}</td>
+<td><input type="number" id="est-
+${item.id_produto}" value="${item.estoque_actual ||
+item.estoque_atual}" style="width:60px;"></td>
+<td>${item.total_unidades_vendidas} und</td>
+<td>
+<button class="btn btn-update"
+onclick="alterarEstoque(${item.id_produto})">Salvar</button>
+</td>
+</tr>
+`;
+});
+}
+// 3. Executar Alteração de Dados (PUT) enviando o nível de acesso no Header
+async function alterarEstoque(idProduto) {
+
+const novoEstoque = document.getElementById(`est-
+${idProduto}`).value;
+const nivel = obterNivelAcesso();
+const resposta = await
+fetch(`/api/produtos/${idProduto}`, {
+method: 'PUT',
+headers: {
+'Content-Type': 'application/json',
+'user-level': nivel // Enviando o nível de acesso simulado
+},
+body: JSON.stringify({ novoEstoque:
+parseInt(novoEstoque) })
+});
+const resultado = await resposta.json();
+if (resposta.ok) {
+alert(resultado.mensagem);
+carregarEstoque(); // Atualiza a tabela se deu certo
+} else {
+alert(`Erro ${resposta.status}: ${resultado.erro}`);
+carregarEstoque(); // Desfaz a alteração visual do
+
+input
+}
+}
+function atualizarInterface() {
+console.log(`Nível alterado para:
+${obterNivelAcesso()}`);
+}
+// Inicialização ao carregar a página
+carregarVendas();
+carregarEstoque();
+</script>
+</body>
+</html>
